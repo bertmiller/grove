@@ -6,6 +6,8 @@ Grove is an evolutionary optimization harness that dispatches Claude agents to i
 
 Give it a problem (defined as a `reference.md` describing the problem, a `solution.py` to optimize and a `verify.py` to score it), and Grove will evolve a population of solutions using Claude as the coding agent. Grove is built to be general and work with many different types of optimization problems, and three examples are provided.
 
+Grove is just a prototype. To flesh it out more, I would expect to inherit a bunch of the tooling from my other harness, [KernelFactory](https://github.com/bertmiller/kernel-factory), and a few other private optimization harnesses I've built since KernelFactory
+
 ## Prerequisites
 
 - Python 3.10+
