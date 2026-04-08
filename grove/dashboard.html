@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grove</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #fff; color: #111; padding: 24px 40px; }
+
+  /* Header */
+  .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+  .header h1 { font-size: 36px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; }
+  .share-btn { background: #f0f0f0; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; }
+  .share-btn:hover { background: #e0e0e0; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 12px; margin-bottom: 8px; }
+  .tab { padding: 14px 20px; background: #d0d0d0; border: 2px solid transparent; cursor: pointer; font-weight: 700; font-size: 14px; text-transform: uppercase; }
+  .tab.active { border-color: #33c; }
+  .tab:hover { background: #c0c0c0; }
+
+  /* Generation label */
+  .gen-label { text-align: right; font-weight: 600; font-size: 18px; margin-bottom: 4px; }
+
+  /* Chart container */
+  .chart-container { background: #d5d5d5; border-radius: 4px; width: 100%; max-width: 900px; margin: 0 auto 32px; position: relative; }
+  .chart-container canvas { width: 100%; height: 100%; }
+
+  /* Info grid */
+  .info-section { background: #d5d5d5; border-radius: 4px; max-width: 900px; margin: 0 auto; padding: 12px; }
+  .info-title { text-align: center; font-size: 22px; font-weight: 700; margin-bottom: 16px; text-transform: uppercase; }
+  .info-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; padding: 0 16px 16px; }
+  .info-card { background: #eae6e1; border-radius: 6px; padding: 20px 16px; text-align: center; }
+  .info-card .label { font-size: 13px; font-weight: 600; text-transform: uppercase; color: #555; margin-bottom: 6px; }
+  .info-card .value { font-size: 26px; font-weight: 800; }
+
+  /* Transcript (harness log) */
+  .transcript { display: none; background: #1a1a1a; color: #ccc; font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 13px; padding: 20px; border-radius: 4px; max-width: 900px; margin: 0 auto; max-height: 600px; overflow-y: auto; white-space: pre-wrap; line-height: 1.6; }
+  .transcript.active { display: block; }
+  .dashboard-content.active { display: block; }
+  .dashboard-content { display: none; }
+
+  /* Agent transcripts viewer */
+  .agents-panel { display: none; max-width: 900px; margin: 0 auto; }
+  .agents-panel.active { display: block; }
+  .agents-bar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .agent-btn { padding: 6px 14px; background: #e5e5e5; border: 2px solid transparent; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; font-family: 'SF Mono', Menlo, Consolas, monospace; }
+  .agent-btn:hover { background: #d5d5d5; }
+  .agent-btn.active { border-color: #2563eb; background: #dbeafe; }
+  .agent-btn.running { border-color: #f59e0b; animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100%{ opacity:1 } 50%{ opacity:.6 } }
+  .agent-viewer { background: #1a1a1a; border-radius: 4px; max-height: 600px; overflow-y: auto; }
+  .agent-viewer:empty::after { content: 'Select an individual to view its agent transcript.'; color: #666; padding: 20px; display: block; font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 13px; }
+  .ev { padding: 6px 16px; border-bottom: 1px solid #2a2a2a; font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 12px; line-height: 1.5; }
+  .ev-text { color: #e2e8f0; }
+  .ev-tool { color: #93c5fd; }
+  .ev-tool .tool-name { color: #60a5fa; font-weight: 700; }
+  .ev-tool .tool-input { color: #a5b4c4; margin-left: 8px; }
+  .ev-result { color: #86efac; }
+  .ev-result .result-label { font-weight: 700; }
+  .ev-system { color: #737373; font-size: 11px; }
+  .ev-tool-result { color: #d4d4d4; font-size: 11px; max-height: 120px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; }
+  .ev-tool-result summary { cursor: pointer; color: #9ca3af; font-size: 12px; user-select: none; }
+  .ev-tool-result summary:hover { color: #d4d4d4; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Grove</h1>
+  <button class="share-btn" onclick="copyShareLink()">Share</button>
+</div>
+
+<div class="tabs">
+  <div class="tab active" data-tab="dashboard" onclick="switchTab('dashboard')">Dashboard</div>
+  <div class="tab" data-tab="transcript" onclick="switchTab('transcript')">Logs</div>
+  <div class="tab" data-tab="agents" onclick="switchTab('agents')">Agents</div>
+</div>
+
+<div class="gen-label" id="gen-label">Generation --</div>
+
+<div class="dashboard-content active" id="dashboard-content">
+  <div class="chart-container">
+    <canvas id="chart" width="900" height="500"></canvas>
+  </div>
+
+  <div class="info-section">
+    <div class="info-title">Information</div>
+    <div class="info-grid">
+      <div class="info-card">
+        <div class="label">Time Spent Optimizing</div>
+        <div class="value" id="stat-time">--</div>
+      </div>
+      <div class="info-card">
+        <div class="label">Best Solution</div>
+        <div class="value" id="stat-best">--</div>
+      </div>
+      <div class="info-card">
+        <div class="label">Tokens Used</div>
+        <div class="value" id="stat-tokens">--</div>
+      </div>
+      <div class="info-card">
+        <div class="label">Sessions</div>
+        <div class="value" id="stat-sessions">--</div>
+      </div>
+      <div class="info-card">
+        <div class="label">Populations</div>
+        <div class="value" id="stat-populations">--</div>
+      </div>
+      <div class="info-card">
+        <div class="label">Tokens / Marginal Improvement</div>
+        <div class="value" id="stat-efficiency">--</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="transcript" id="transcript-content"></div>
+
+<div class="agents-panel" id="agents-panel">
+  <div class="agents-bar" id="agents-bar"></div>
+  <div class="agent-viewer" id="agent-viewer"></div>
+</div>
+
+<script>
+let state = null;
+let activeTab = 'dashboard';
+let knownTranscripts = [];
+let selectedAgent = null;
+let loadedTranscriptRaw = null;  // raw text of last loaded transcript
+
+function switchTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll('.tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.tab === tab);
+  });
+  document.getElementById('dashboard-content').classList.toggle('active', tab === 'dashboard');
+  document.getElementById('transcript-content').classList.toggle('active', tab === 'transcript');
+  document.getElementById('agents-panel').classList.toggle('active', tab === 'agents');
+  if (tab === 'agents') refreshAgentList();
+}
+
+function copyShareLink() {
+  navigator.clipboard.writeText(window.location.href);
+  const btn = document.querySelector('.share-btn');
+  btn.textContent = 'Copied!';
+  setTimeout(() => btn.textContent = 'Share', 1500);
+}
+
+function formatTime(seconds) {
+  if (seconds < 60) return Math.round(seconds) + 's';
+  if (seconds < 3600) return Math.floor(seconds / 60) + 'm ' + Math.round(seconds % 60) + 's';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  return h + 'h ' + m + 'm';
+}
+
+function formatNumber(n) {
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+  if (Number.isInteger(n)) return n.toString();
+  return n.toFixed(4);
+}
+
+function updateStats() {
+  if (!state) return;
+
+  document.getElementById('gen-label').textContent = 'Generation ' + state.current_generation + '/' + state.total_generations;
+  document.getElementById('stat-time').textContent = formatTime(state.elapsed_seconds);
+  document.getElementById('stat-sessions').textContent = state.sessions_count;
+  document.getElementById('stat-populations').textContent = state.population_size;
+  document.getElementById('stat-tokens').textContent = state.tokens_used > 0 ? formatNumber(state.tokens_used) : '--';
+
+  if (state.best_individual) {
+    const best = state.best_individual;
+    document.getElementById('stat-best').textContent = formatNumber(best.fitness) + ' @ gen ' + best.generation;
+  }
+
+  // Tokens per marginal improvement
+  if (state.tokens_used > 0 && state.generations.length >= 2) {
+    const first = state.generations[0].best_fitness;
+    const last = state.generations[state.generations.length - 1].best_fitness;
+    const improvement = first - last;
+    if (improvement > 0) {
+      document.getElementById('stat-efficiency').textContent = formatNumber(state.tokens_used / improvement);
+    }
+  }
+}
+
+function drawChart() {
+  if (!state || !state.generations.length) return;
+
+  const canvas = document.getElementById('chart');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const W = rect.width;
+  const H = rect.height;
+
+  ctx.clearRect(0, 0, W, H);
+
+  const points = state.generations
+    .filter(g => g.best_fitness != null)
+    .map(g => ({ gen: g.generation, fitness: g.best_fitness }));
+
+  if (points.length < 1) return;
+
+  const pad = { top: 40, right: 40, bottom: 50, left: 80 };
+  const plotW = W - pad.left - pad.right;
+  const plotH = H - pad.top - pad.bottom;
+
+  const maxGen = Math.max(state.total_generations, points[points.length - 1].gen);
+  const fitnesses = points.map(p => p.fitness);
+  let minF = Math.min(...fitnesses);
+  let maxF = Math.max(...fitnesses);
+  if (minF === maxF) { minF *= 0.95; maxF *= 1.05; }
+  const fRange = maxF - minF;
+  minF -= fRange * 0.05;
+  maxF += fRange * 0.05;
+
+  function x(gen) { return pad.left + (gen / maxGen) * plotW; }
+  function y(f) { return pad.top + plotH - ((f - minF) / (maxF - minF)) * plotH; }
+
+  // Grid lines
+  ctx.strokeStyle = '#bbb';
+  ctx.lineWidth = 0.5;
+  for (let i = 0; i <= 5; i++) {
+    const yy = pad.top + (i / 5) * plotH;
+    ctx.beginPath(); ctx.moveTo(pad.left, yy); ctx.lineTo(pad.left + plotW, yy); ctx.stroke();
+  }
+
+  // Axes labels
+  ctx.fillStyle = '#555';
+  ctx.font = '12px -apple-system, sans-serif';
+  ctx.textAlign = 'center';
+  for (let g = 0; g <= maxGen; g++) {
+    if (maxGen <= 20 || g % Math.ceil(maxGen / 10) === 0) {
+      ctx.fillText(g, x(g), H - pad.bottom + 20);
+    }
+  }
+  ctx.textAlign = 'right';
+  for (let i = 0; i <= 5; i++) {
+    const val = maxF - (i / 5) * (maxF - minF);
+    ctx.fillText(formatNumber(val), pad.left - 8, pad.top + (i / 5) * plotH + 4);
+  }
+
+  // Axis titles
+  ctx.fillStyle = '#333';
+  ctx.font = '13px -apple-system, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Generation', pad.left + plotW / 2, H - 8);
+  ctx.save();
+  ctx.translate(16, pad.top + plotH / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText('Best Fitness (lower is better)', 0, 0);
+  ctx.restore();
+
+  // Line
+  ctx.strokeStyle = '#2563eb';
+  ctx.lineWidth = 2.5;
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  points.forEach((p, i) => {
+    const px = x(p.gen), py = y(p.fitness);
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  });
+  ctx.stroke();
+
+  // Dots
+  ctx.fillStyle = '#2563eb';
+  points.forEach(p => {
+    ctx.beginPath();
+    ctx.arc(x(p.gen), y(p.fitness), 4, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // Best point highlight
+  const bestPoint = points.reduce((a, b) => a.fitness < b.fitness ? a : b);
+  ctx.fillStyle = '#16a34a';
+  ctx.beginPath();
+  ctx.arc(x(bestPoint.gen), y(bestPoint.fitness), 6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#16a34a';
+  ctx.font = 'bold 12px -apple-system, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(formatNumber(bestPoint.fitness), x(bestPoint.gen) + 10, y(bestPoint.fitness) - 8);
+}
+
+function updateTranscript() {
+  if (!state) return;
+  const el = document.getElementById('transcript-content');
+  el.textContent = state.transcript.join('\n');
+  el.scrollTop = el.scrollHeight;
+}
+
+// --- Agent transcript viewer ---
+
+async function refreshAgentList() {
+  try {
+    const resp = await fetch('/transcripts');
+    if (!resp.ok) return;
+    knownTranscripts = await resp.json();
+  } catch(e) { return; }
+
+  const bar = document.getElementById('agents-bar');
+  bar.innerHTML = '';
+  knownTranscripts.forEach(name => {
+    const btn = document.createElement('div');
+    btn.className = 'agent-btn' + (name === selectedAgent ? ' active' : '');
+    btn.textContent = name;
+    btn.onclick = () => loadAgentTranscript(name);
+    bar.appendChild(btn);
+  });
+}
+
+async function loadAgentTranscript(name) {
+  selectedAgent = name;
+  // highlight button
+  document.querySelectorAll('.agent-btn').forEach(b => {
+    b.classList.toggle('active', b.textContent === name);
+  });
+
+  try {
+    const resp = await fetch('/transcripts/' + name);
+    if (!resp.ok) return;
+    const text = await resp.text();
+    // Skip re-render if nothing changed
+    if (text === loadedTranscriptRaw) return;
+    loadedTranscriptRaw = text;
+    const events = text.trim().split('\n').filter(Boolean).map(line => {
+      try { return JSON.parse(line); } catch(e) { return null; }
+    }).filter(Boolean);
+    renderTranscript(events);
+  } catch(e) {}
+}
+
+function renderTranscript(events) {
+  const viewer = document.getElementById('agent-viewer');
+  viewer.innerHTML = '';
+
+  for (const ev of events) {
+    const type = ev.type;
+
+    if (type === 'assistant') {
+      const blocks = (ev.message && ev.message.content) || [];
+      for (const block of blocks) {
+        if (block.type === 'thinking' && block.thinking && block.thinking.trim()) {
+          const div = document.createElement('div');
+          div.className = 'ev ev-tool-result';
+          const details = document.createElement('details');
+          const summary = document.createElement('summary');
+          summary.textContent = 'thinking (' + block.thinking.length + ' chars)';
+          details.appendChild(summary);
+          const pre = document.createElement('pre');
+          pre.textContent = block.thinking;
+          pre.style.margin = '4px 0 0';
+          details.appendChild(pre);
+          div.appendChild(details);
+          viewer.appendChild(div);
+        } else if (block.type === 'text' && block.text && block.text.trim()) {
+          const div = document.createElement('div');
+          div.className = 'ev ev-text';
+          div.textContent = block.text.trim();
+          viewer.appendChild(div);
+        } else if (block.type === 'tool_use') {
+          const div = document.createElement('div');
+          div.className = 'ev ev-tool';
+          const toolName = block.name || '?';
+          const inp = block.input || {};
+          let detail = '';
+          if (toolName === 'Bash') detail = inp.command || '';
+          else if (toolName === 'Read') detail = inp.file_path || '';
+          else if (toolName === 'Edit') detail = inp.file_path || '';
+          else if (toolName === 'Write') detail = inp.file_path || '';
+          else if (toolName === 'Grep') detail = inp.pattern || '';
+          else if (toolName === 'Glob') detail = inp.pattern || '';
+          else detail = JSON.stringify(inp).slice(0, 200);
+
+          div.innerHTML = '<span class="tool-name">' + esc(toolName) + '</span>'
+            + '<span class="tool-input">' + esc(detail.slice(0, 200)) + '</span>';
+          viewer.appendChild(div);
+        }
+      }
+    } else if (type === 'user') {
+      // Tool results come back as user messages with tool_result content blocks
+      const blocks = (ev.message && ev.message.content) || [];
+      for (const block of blocks) {
+        if (block.type === 'tool_result') {
+          const content = block.content || '';
+          const text = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
+          if (text.trim()) {
+            const div = document.createElement('div');
+            div.className = 'ev ev-tool-result';
+            const details = document.createElement('details');
+            const summary = document.createElement('summary');
+            const firstLine = text.trim().split('\n')[0].slice(0, 100);
+            summary.textContent = 'output: ' + firstLine + (text.length > 100 ? '...' : '');
+            details.appendChild(summary);
+            const pre = document.createElement('pre');
+            pre.textContent = text;
+            pre.style.margin = '4px 0 0';
+            details.appendChild(pre);
+            div.appendChild(details);
+            viewer.appendChild(div);
+          }
+        }
+      }
+    } else if (type === 'result') {
+      const div = document.createElement('div');
+      div.className = 'ev ev-result';
+      const parts = [];
+      if (ev.num_turns != null) parts.push(ev.num_turns + ' turns');
+      if (ev.duration_ms != null) parts.push((ev.duration_ms / 1000).toFixed(1) + 's');
+      if (ev.total_cost_usd != null) parts.push('$' + ev.total_cost_usd.toFixed(4));
+      div.innerHTML = '<span class="result-label">Done</span> ' + esc(parts.join(', '));
+      viewer.appendChild(div);
+    }
+    // skip system, rate_limit_event, etc.
+  }
+  viewer.scrollTop = viewer.scrollHeight;
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+async function poll() {
+  try {
+    const resp = await fetch('/state');
+    if (resp.ok) {
+      state = await resp.json();
+      updateStats();
+      drawChart();
+      updateTranscript();
+    }
+  } catch (e) {}
+  if (activeTab === 'agents') {
+    await refreshAgentList();
+    // auto-reload selected transcript if it's still being written
+    if (selectedAgent) await loadAgentTranscript(selectedAgent);
+  }
+}
+
+poll();
+setInterval(poll, 2000);
+window.addEventListener('resize', drawChart);
+</script>
+</body>
+</html>
